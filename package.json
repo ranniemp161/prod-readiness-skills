@@ -1,0 +1,24 @@
+{
+  "name": "prod-readiness-skills",
+  "version": "1.0.0",
+  "description": "Installs a set of production-readiness AI agent skills (architecture, security, code review, cloud infra, SRE readiness, launch checklist) into your project for use with Claude Code, Kimi Code CLI, OpenAI Codex, or any agent supporting the open Agent Skills specification.",
+  "bin": {
+    "prod-skills-install": "bin/cli.js"
+  },
+  "files": [
+    "bin",
+    "skills"
+  ],
+  "keywords": [
+    "claude-code",
+    "agent-skills",
+    "code-review",
+    "production-readiness",
+    "sre",
+    "security-audit"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=14"
+  }
+}
