@@ -10,7 +10,7 @@ CLI, OpenAI Codex, or any agent that supports the open Agent Skills spec.
 No global install needed — just run this from inside their project folder:
 
 ```bash
-npx github:ranniemp161 prod-readiness-skills
+npx github:ranniemp161/prod-readiness-skills
 ```
 
 It will ask to confirm, then drop the skills into `.agents/skills/`.
