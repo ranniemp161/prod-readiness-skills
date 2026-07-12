@@ -13,13 +13,18 @@ No global install needed — just run this from inside their project folder:
 npx github:ranniemp161/prod-readiness-skills
 ```
 
-It will ask to confirm, then drop the skills into `.agents/skills/`.
+It auto-detects your agent's skills directory (`.claude/skills/` for Claude
+Code, `.agents/skills/` for the open Agent Skills spec, `.cursor/skills/` for
+Cursor). If none exists yet it defaults to `.agents/skills/`. It asks to
+confirm before writing.
 
 ### Options
 
 ```bash
-npx prod-readiness-skills --target .agents/skills   # custom location
-npx prod-readiness-skills --only prod-security,prod-code-review
+npx prod-readiness-skills --agent claude            # force .claude/skills (Claude Code)
+npx prod-readiness-skills --agent agents            # force .agents/skills (open spec)
+npx prod-readiness-skills --target path/to/skills   # fully custom location
+npx prod-readiness-skills --only prod-security,prod-ai-engineering
 npx prod-readiness-skills --yes                     # skip confirmation
 npx prod-readiness-skills --force                   # overwrite existing
 npx prod-readiness-skills --list                    # show available skills
@@ -58,9 +63,15 @@ Edit the relevant `skills/<name>/SKILL.md`, bump the `version` in
 
 | Skill | Purpose |
 |-------|---------|
-| `prod-architecture` | Review system design, scalability, SPOFs |
-| `prod-security` | Security audit, STRIDE threat model, OWASP |
-| `prod-readiness` | SRE readiness: observability, SLOs, on-call |
-| `prod-code-review` | Production-grade code review |
-| `prod-cloud-infra` | Cloud infrastructure: cost, security, DR |
-| `prod-launch-checklist` | Full pre-launch flow (runs all above) |
+| `prod-architecture` | Evidence-based system design review: scalability, SPOFs, data architecture |
+| `prod-security` | Security audit with active recon: injection, authz/IDOR, secrets, supply chain |
+| `prod-readiness` | SRE readiness: observability, proven rollback, tested backups, on-call |
+| `prod-code-review` | Staff-level code review: correctness, concurrency, failure modes, with patches |
+| `prod-cloud-infra` | Cloud/IaC review: exposure, reliability, quantified cost optimization, DR |
+| `prod-ai-engineering` | AI/LLM app review: prompt injection, agent tool safety, evals, cost, RAG |
+| `prod-launch-checklist` | Orchestrates all applicable reviews into one Go/No-Go launch report |
+
+All skills follow the same senior-engineer methodology: **investigate the repo
+first** (never ask for what can be discovered), **cite evidence** (file:line)
+for every finding, **calibrate severity** to the project's real scale and
+criticality, and **prescribe concrete fixes** (code/config diffs, not advice).

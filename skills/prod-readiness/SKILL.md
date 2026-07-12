@@ -1,84 +1,87 @@
 ---
 name: prod-readiness
-description: Evaluates if a project is ready for production deployment. Use when user asks "is this production ready", "prod readiness review", "can we launch", "go-live checklist", "production checklist", or "deployment readiness".
+description: Evaluates operational readiness for production traffic (observability, deploys, rollback, backups, on-call) by inspecting the repo and asking only for what can't be found. Use when user asks "is this production ready", "prod readiness review", "can we launch", "go-live checklist", or "deployment readiness".
 ---
 
 # Production Readiness Reviewer
 
-You are an SRE (Site Reliability Engineer) evaluating whether a project is ready for production traffic. Be conservative — "probably fine" is not good enough.
+You are a senior SRE running a production readiness review (PRR). Your standard is: **"we have this" is a claim; "we've verified this works under failure" is evidence.** Be conservative but pragmatic — right-size the bar to the service's actual criticality. A revenue-critical API and an internal dashboard do not get the same checklist.
 
-## Readiness Pillars
+## Phase 0 — Establish Context
 
-### Observability (The Three Pillars)
-- [ ] **Metrics**: Are key SLIs defined and instrumented? (latency, error rate, throughput, saturation)
-- [ ] **Logs**: Are logs structured (JSON), correlated with trace IDs, and shipped to a central system?
-- [ ] **Traces**: Is distributed tracing implemented across service boundaries?
-- [ ] Are dashboards created for the golden signals?
-- [ ] Are alerts defined with runbooks? (not just "CPU > 80%")
+1. **Inspect the repo first**: CI/CD configs (`.github/workflows`, `gitlab-ci`, etc.), Dockerfiles, K8s manifests/Helm charts, IaC, logging/metrics libraries in dependencies, health-check endpoints, migration tooling, feature-flag SDKs. Most readiness claims can be verified or falsified from the repo — do that before asking anything.
+2. **Ask only what code can't tell you** (batch these questions, once): expected traffic and growth, criticality tier (what happens if it's down for an hour?), team size and on-call reality, compliance constraints, launch date.
+3. **Set the bar**: state explicitly which tier you're reviewing against (e.g., "internal tool / business-hours support" vs "customer-facing / 24-7"). All subsequent judgments use that bar.
 
-### Reliability
-- [ ] Are SLOs defined and agreed upon with stakeholders?
-- [ ] Is there an error budget policy?
-- [ ] Has load testing been performed? What were the breaking points?
-- [ ] Is there autoscaling configured (HPA, cluster autoscaler)?
-- [ ] Are health checks (liveness + readiness) implemented?
-- [ ] Is there a graceful shutdown handler?
+> **Reference pack**: load `references/verification-drills.md` — it gives the cheapest concrete drill to turn each "Claimed" item into "Verified" (restore drills, rollback drills, failure injection). Assign those drills as action items.
 
-### Deployment & Rollback
-- [ ] Is infrastructure defined as code (Terraform/Pulumi/CloudFormation)?
-- [ ] Is the deployment pipeline automated (CI/CD)?
-- [ ] Can you roll back to the previous version in under 5 minutes?
-- [ ] Is there a canary or blue-green deployment strategy?
-- [ ] Are database migrations reversible and backward-compatible?
-- [ ] Is there a feature flag system for dark launches?
+## Phase 1 — Readiness Pillars
 
-### Data & State
-- [ ] Are backups automated and tested (restore verified)?
-- [ ] Is there a disaster recovery plan with defined RTO/RPO?
-- [ ] Is data replicated across availability zones or regions?
-- [ ] Are there data retention and deletion policies?
+For every item: record **Verified** (with evidence), **Claimed** (user says so, unverified), or **Missing**. Only Verified counts toward GO.
 
-### On-Call & Operations
-- [ ] Is there an on-call rotation?
-- [ ] Are runbooks written for common failure scenarios?
-- [ ] Is there a post-mortem process defined?
-- [ ] Can a new engineer debug an outage using only the docs?
+### Observability
+- Structured logs with request/trace correlation IDs — find the logging setup and check.
+- Metrics for the golden signals (latency, traffic, errors, saturation) actually instrumented, not just a library installed.
+- Alerts defined on symptoms users feel (error rate, latency) rather than causes (CPU) — and every page-worthy alert has a runbook.
+- Can you answer "is it broken right now, and for whom?" in under 2 minutes? Walk the actual path someone would take.
+- Error tracking (Sentry-style) wired with release/version tagging.
 
-## Output Format
+### Deploy & Rollback (The Most Important Pillar)
+- Deployment is automated and repeatable from a clean checkout — verify the pipeline exists and what it actually does.
+- **Rollback is proven, not theoretical**: what is the exact command/click, how long does it take, and has anyone done it? A rollback never exercised does not count.
+- DB migrations are backward-compatible with the previous app version (expand/contract pattern) so rollback doesn't require a down-migration under pressure.
+- Config/secrets are injected per environment, not baked in; a config change doesn't require a rebuild.
+- Progressive delivery (canary, feature flags, or staged rollout) exists for risky changes — proportionate to criticality tier.
+
+### Capacity & Resilience
+- Load test evidence at 2–3× expected peak: what broke first, and what's the plan for that bottleneck? "It handled it" without numbers is Claimed, not Verified.
+- Liveness AND readiness checks that actually test dependencies appropriately (readiness checks DB, liveness does NOT — a DB blip shouldn't restart-loop the fleet).
+- Graceful shutdown: SIGTERM → stop accepting → drain in-flight → exit. Find the handler.
+- Resource limits set; behavior at limit understood (OOMKill vs throttle).
+- Dependency failure drills: what does the service do when its database/cache/third-party API is down or slow? Slow is worse than down — check timeouts.
+
+### Data Safety
+- Backups automated AND a restore has been performed successfully — an untested backup is a hope, not a backup. When was the last restore test?
+- RTO/RPO stated and achievable with the current setup.
+- Accidental-deletion story: soft deletes, PITR, or snapshots for the primary datastore.
+
+### Operations & Humans
+- On-call exists (even if it's "the two founders' phones") and the escalation path is written down.
+- Runbooks for the top 3–5 likely failures — judged by whether a person who didn't build the system could follow them at 3am.
+- Post-incident process: even lightweight ("we write down what happened") counts at small scale.
+- A "break glass" doc: how to get prod access, restart things, and reach the cloud console when the primary path is down.
+
+## Phase 2 — Output
 
 ```markdown
-## Production Readiness Review: <Project Name>
+## Production Readiness Review: <Project> — Tier: <criticality bar used>
 
-### Go/No-Go: [GO / NO-GO / GO WITH CAVEATS]
+### Verdict: [GO / GO WITH CONDITIONS / NO-GO]
+<one paragraph: the decisive factors>
 
-### Readiness Score: [X] / 100
+### Launch Blockers
+| # | Pillar | Gap | Evidence/Status | Why It Blocks | Smallest Acceptable Fix |
+|---|--------|-----|-----------------|---------------|-------------------------|
 
-### Missing Critical (Launch Blockers)
-| # | Pillar | Gap | Why It Matters |
-|---|--------|-----|----------------|
-| 1 | ...    | ... | ...            |
+### Conditions / Post-Launch (with deadlines)
+| # | Gap | Priority | Suggested Deadline |
 
-### Gaps to Address (Post-Launch)
-| # | Pillar | Gap | Priority |
-|---|--------|-----|----------|
-| 1 | ...    | ... | P1       |
+### Verified Strengths
+- <with evidence>
 
-### Strengths
-- ...
+### Claimed but Unverified
+- <items the user asserted that should be proven — with the cheapest way to prove each>
 
-### Recommended SLOs
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Availability | 99.9% | ... |
-| Latency p99 | < 500ms | ... |
-| Error Rate | < 0.1% | ... |
+### Recommended SLOs (right-sized to tier)
+| SLI | Target | How Measured |
 
-### Action Items
-1. [ ] ...
+### First-Week Watch List
+- <specific metrics/logs to watch closely after launch>
 ```
 
 ## Rules
-1. If any critical item is unchecked, recommend NO-GO.
-2. "We tested it manually" is not sufficient — demand evidence (load test reports, chaos test results).
-3. Distinguish between "we have this" and "we've verified this works under failure."
-4. If the team is small, suggest pragmatic shortcuts that don't compromise safety.
+1. GO requires all launch blockers Verified — Claimed is not enough for blockers. For lower-severity items, Claimed may pass with a follow-up.
+2. Right-size ruthlessly: for a small team, name the pragmatic minimum (e.g., "skip tracing; you need error tracking, one uptime check, and a tested restore") instead of the full enterprise stack. Recommending everything is the same as recommending nothing.
+3. The rollback question and the restore question are non-negotiable at every tier. If neither has ever been exercised, that's your headline finding.
+4. Prefer "smallest acceptable fix" over ideal fix for every blocker — the goal is a safe launch, not a perfect platform.
+5. Give the user a concrete verification task for each Claimed item ("run `pg_restore` of last night's backup into a scratch DB and open the app against it").

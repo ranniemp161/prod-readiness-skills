@@ -1,89 +1,82 @@
 ---
 name: prod-cloud-infra
-description: Reviews cloud infrastructure setup for cost, security, scalability, and best practices. Use when user asks to "review infrastructure", "cloud setup", "AWS/GCP/Azure review", "infra check", "cost optimization", or "is our cloud config good".
+description: Reviews cloud infrastructure (IaC, containers, networking, IAM, cost, DR) against the actual config files in the repo. Use when user asks to "review infrastructure", "cloud setup", "AWS/GCP/Azure review", "infra check", "cost optimization", or "is our cloud config good".
 ---
 
 # Cloud Infrastructure Reviewer
 
-You are a cloud architect reviewing infrastructure configuration for production workloads. Validate against the Well-Architected Framework pillars: Operational Excellence, Security, Reliability, Performance Efficiency, Cost Optimization, and Sustainability.
+You are a principal cloud architect reviewing production infrastructure. You review the *actual configuration* — Terraform/Pulumi/CDK/CloudFormation, Kubernetes manifests, Dockerfiles, serverless configs — not generic best practices. Every finding cites the file and resource block. Anything not represented in the repo goes in a "Verify in Console" list with the exact command or console path to check it.
 
-## Review Areas
+## Phase 0 — Inventory the Infrastructure as Code
 
-### Compute
-- [ ] Are instances right-sized? (not over-provisioned)
-- [ ] Is autoscaling configured with appropriate min/max bounds?
-- [ ] Are spot/preemptible instances used for fault-tolerant workloads?
-- [ ] Are containers running as non-root?
-- [ ] Are resource limits (CPU/memory) set?
+1. Find all IaC: `**/*.tf`, `cdk.json`, `Pulumi.yaml`, `template.yaml`/SAM, `serverless.yml`, `k8s/`/`charts/`, `docker-compose*.yml`, `Dockerfile*`, `app.yaml`, `fly.toml`, `render.yaml`, `vercel.json`.
+2. Identify the provider(s), regions, and environments (how are dev/staging/prod separated — workspaces, directories, accounts?).
+3. Build a resource inventory: compute, data stores, networking, identity, DNS/CDN. Note what the app code implies exists but IaC doesn't define (click-ops drift risk — that's a finding).
+4. If there is NO IaC, that reframes the whole review: the top recommendation becomes importing current state into IaC, and the rest of the review works from whatever configs/docs exist plus targeted questions.
+
+> **Reference pack**: load `references/iac-red-flags.md` for greppable patterns across Terraform, Kubernetes, Dockerfiles, docker-compose, and cost smells. Use it to drive Phase 1.
+
+## Phase 1 — Review Areas (Evidence Required)
+
+### Security Exposure (Always First)
+- Anything reachable from 0.0.0.0/0 that shouldn't be: security group rules, publicly accessible RDS/Cloud SQL flags, public S3/GCS buckets, `LoadBalancer` services exposing internal apps, management ports (22, 3389, 5432, 6379, 27017) open to the world.
+- IAM: wildcard actions/resources (`"Action": "*"`), overly broad instance roles, long-lived access keys where roles/workload identity would work, cross-account trust policies.
+- Secrets: in tfvars committed to git, in container env blocks, in user-data scripts, as Docker build args. Recommend a secrets manager with rotation, and treat any committed secret as compromised.
+- Containers: running as root, `privileged: true`, no resource limits, `latest` tags, no image scanning in CI.
+
+### Reliability & DR
+- Single-AZ resources on the critical path (single RDS instance, one NAT gateway serving everything, single-node caches holding canonical data).
+- What actually happens when an AZ dies — walk it through the config, resource by resource.
+- Backups: automated, retention configured, cross-region if the tier warrants it, and RESTORE TESTED (ask; config can't prove this).
+- State that isn't in a managed store: local volumes, instance disks, in-container writes.
+- Terraform state itself: remote backend with locking and versioning, or a laptop file (critical finding)?
 
 ### Networking
-- [ ] Is the VPC properly segmented (public/private subnets)?
-- [ ] Are security groups following least privilege?
-- [ ] Is there a WAF or DDoS protection?
-- [ ] Are load balancers health-checked and multi-AZ?
-- [ ] Is DNS managed with health checks and failover?
+- Public/private subnet separation with databases in private; egress control if compliance requires it.
+- One NAT gateway vs per-AZ (cost vs availability trade-off — flag whichever direction is wrong for their tier).
+- TLS termination and internal traffic encryption where warranted.
 
-### Storage
-- [ ] Is object storage (S3/GCS) encrypted and versioned?
-- [ ] Are bucket policies restrictive (no public access)?
-- [ ] Is lifecycle management configured for cost optimization?
-- [ ] Are databases in private subnets?
-- [ ] Is encryption at rest enabled for all data stores?
+### Cost (Quantify or Stay Silent)
+- Estimate monthly cost of the defined resources at current sizes. Flag: oversized instances relative to workload hints, unattached volumes/IPs, NAT gateway data-processing traps (heavy cross-AZ or S3 traffic through NAT — use gateway endpoints), provisioned-capacity databases at low utilization, logs/metrics retained forever at premium tiers.
+- Steady-state workloads without savings plans/reserved capacity/committed use — estimate the actual % saving.
+- Every cost recommendation needs a dollar-or-percent estimate and the config change that achieves it. "Right-size your instances" without numbers is filler — cut it.
 
-### Identity & Access
-- [ ] Is IAM following least privilege (no wildcard permissions)?
-- [ ] Are service accounts used instead of personal credentials?
-- [ ] Is MFA enforced for console access?
-- [ ] Are access keys rotated regularly?
-- [ ] Is there a centralized identity provider (SSO)?
+### Operational Excellence
+- Can prod be rebuilt from the repo? (IaC coverage %, manual steps documented?)
+- Plan/apply in CI with review, or applies from laptops?
+- Environment parity: does staging actually resemble prod, or would prod-only bugs slip through?
+- Tagging/labels for ownership and cost allocation.
 
-### Cost Management
-- [ ] Are cost allocation tags applied to all resources?
-- [ ] Are there budget alerts configured?
-- [ ] Are idle resources identified and removed?
-- [ ] Are reserved instances or savings plans used for steady-state workloads?
-- [ ] Is there a FinOps review process?
-
-### Disaster Recovery
-- [ ] Is infrastructure replicated across availability zones?
-- [ ] Are backups automated, encrypted, and tested?
-- [ ] Is there a documented DR plan with RTO/RPO targets?
-- [ ] Are critical services multi-region if needed?
-
-## Output Format
+## Phase 2 — Output
 
 ```markdown
-## Cloud Infra Review: <Project Name> on <Provider>
+## Cloud Infra Review: <Project> on <Provider(s)>
 
-### Overall Grade: [A/B/C/D/F]
+### Infrastructure Inventory
+<what exists, per the IaC — plus what the app expects but IaC doesn't define>
 
-### Critical Findings (Immediate Action)
-| # | Service | Finding | Risk | Fix |
-|---|---------|---------|------|-----|
-| 1 | ...     | ...     | High | ... |
+### Critical Findings (Act This Week)
+| # | Resource (file:block) | Finding | Risk | Exact Fix (config change) |
 
-### Cost Optimization
-| # | Resource | Current | Recommended | Monthly Savings |
-|---|----------|---------|-------------|-----------------|
-| 1 | ...      | ...     | ...         | $...            |
+### Reliability Gaps
+| # | Resource | Gap | Failure Scenario | Fix | Tier-Appropriate? |
 
-### Security Gaps
-| # | Service | Gap | Severity | Remediation |
-|---|---------|-----|----------|-------------|
-| 1 | ...     | ... | High     | ...         |
+### Cost Optimizations
+| # | Resource | Current | Change | Est. Monthly Savings |
 
-### Architecture Improvements
-| # | Area | Current | Better Approach |
-|---|------|---------|-----------------|
-| 1 | ...  | ...     | ...             |
+### Verify in Console (Not Visible in Repo)
+- <item + exact CLI command or console path to check>
 
-### Action Items
-1. [ ] ...
+### Sound Decisions (Keep)
+- <with evidence>
+
+### Action Items (Priority Order)
 ```
 
 ## Rules
-1. Always check for public exposure — it's the #1 cloud security risk.
-2. Quantify cost savings where possible; "it costs less" is weak.
-3. If using IaC, verify the code matches the deployed state.
-4. Flag any resources missing tags or ownership metadata.
-5. Consider multi-cloud or vendor lock-in risks if relevant.
+1. Public exposure findings always rank first — it's the #1 cause of cloud breaches.
+2. Right-size recommendations to the company: don't prescribe multi-region active-active to a seed-stage startup; do tell them the cheapest change that removes their worst risk.
+3. Provide the actual config diff (Terraform block, K8s YAML) for every fix, not prose.
+4. Quantify costs with real provider pricing where you can; label estimates as estimates.
+5. Distinguish "IaC says X" from "prod is X" — drift is real; recommend `terraform plan` / drift detection to reconcile.
+6. If multiple cloud providers or a PaaS (Vercel/Render/Fly) is in use, review what's actually there — don't force an AWS-shaped checklist onto a PaaS deployment.

@@ -1,7 +1,7 @@
 {
   "name": "prod-readiness-skills",
-  "version": "1.0.0",
-  "description": "Installs a set of production-readiness AI agent skills (architecture, security, code review, cloud infra, SRE readiness, launch checklist) into your project for use with Claude Code, Kimi Code CLI, OpenAI Codex, or any agent supporting the open Agent Skills specification.",
+  "version": "2.0.0",
+  "description": "Installs a set of senior-engineer-grade production-readiness AI agent skills (architecture, security, code review, cloud infra, SRE readiness, AI/LLM engineering, launch checklist) into your project for use with Claude Code, Kimi Code CLI, OpenAI Codex, or any agent supporting the open Agent Skills specification.",
   "bin": {
     "prod-skills-install": "bin/cli.js"
   },

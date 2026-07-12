@@ -10,9 +10,27 @@ const ALL_SKILLS = fs.readdirSync(SKILLS_SRC).filter((name) =>
   fs.statSync(path.join(SKILLS_SRC, name)).isDirectory()
 );
 
+// Known agent skill directories, in detection-priority order.
+const AGENT_DIRS = {
+  claude: '.claude/skills',   // Claude Code
+  agents: '.agents/skills',   // open Agent Skills spec (Codex, Kimi, others)
+  cursor: '.cursor/skills',   // Cursor
+};
+
+// Pick the best default install target for this project: prefer an agent
+// directory that already exists in cwd, otherwise the open-spec location.
+function detectTarget(cwd) {
+  for (const dir of Object.values(AGENT_DIRS)) {
+    const root = dir.split('/')[0];
+    if (fs.existsSync(path.join(cwd, root))) return dir;
+  }
+  return AGENT_DIRS.agents;
+}
+
 function parseArgs(argv) {
   const args = {
-    target: '.agents/skills',
+    target: null,
+    agent: null,
     only: null,
     force: false,
     yes: false,
@@ -23,6 +41,8 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === '--target' || a === '-t') {
       args.target = argv[++i];
+    } else if (a === '--agent' || a === '-a') {
+      args.agent = argv[++i];
     } else if (a === '--only') {
       args.only = argv[++i].split(',').map((s) => s.trim());
     } else if (a === '--force' || a === '-f') {
@@ -46,7 +66,12 @@ Usage:
   npx prod-readiness-skills [options]
 
 Options:
-  -t, --target <dir>   Install location (default: .agents/skills)
+  -t, --target <dir>   Install location (default: auto-detected, see --agent)
+  -a, --agent <name>   Target a specific agent: claude | agents | cursor
+                       claude → .claude/skills (Claude Code)
+                       agents → .agents/skills (open Agent Skills spec)
+                       If omitted, an existing agent directory in your project
+                       is detected automatically.
       --only <a,b,c>   Install only specific skills (comma-separated names)
   -y, --yes            Skip confirmation prompt
   -f, --force          Overwrite existing skill folders
@@ -107,7 +132,19 @@ async function main() {
     }
   }
 
-  const targetDir = path.resolve(process.cwd(), args.target);
+  let targetRel = args.target;
+  if (!targetRel && args.agent) {
+    targetRel = AGENT_DIRS[args.agent];
+    if (!targetRel) {
+      console.error(`Unknown agent "${args.agent}". Known: ${Object.keys(AGENT_DIRS).join(', ')}`);
+      process.exit(1);
+    }
+  }
+  if (!targetRel) {
+    targetRel = detectTarget(process.cwd());
+    console.log(`Auto-detected install target: ${targetRel} (override with --agent or --target)`);
+  }
+  const targetDir = path.resolve(process.cwd(), targetRel);
 
   console.log(`This will install ${toInstall.length} skill(s) into:\n  ${targetDir}\n`);
   toInstall.forEach((name) => console.log(`  - ${name}`));
@@ -142,7 +179,7 @@ async function main() {
 
   console.log(`\nDone. ${installed} installed, ${skipped} skipped.`);
   if (installed > 0) {
-    console.log(`\nInvoke a skill in your agent with e.g.:\n  /skill:${toInstall[0]}\n`);
+    console.log(`\nInvoke a skill in your agent, e.g.:\n  /${toInstall[0]}          (Claude Code)\n  /skill:${toInstall[0]}    (agents using the skill: prefix)\n`);
   }
 }
 
